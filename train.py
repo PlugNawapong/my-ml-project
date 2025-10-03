@@ -11,6 +11,7 @@ from datetime import datetime
 
 from dataset import HyperspectralDataset, HyperspectralPatchDataset, get_train_transforms, get_val_transforms, CLASS_NAMES
 from model import get_model
+from spectral_augmentation import get_spectral_augmentation
 
 
 def train_epoch(model, dataloader, criterion, optimizer, device):
@@ -117,6 +118,12 @@ def main(args):
     # Dataset and DataLoader
     print(f'Loading dataset from {args.data_dir}...')
 
+    # Setup spectral augmentation for 1D model
+    spectral_aug = None
+    if args.spectral_augment and not args.use_patches:
+        spectral_aug = get_spectral_augmentation(mode=args.spectral_augment)
+        print(f'Using spectral augmentation: {args.spectral_augment}')
+
     if args.use_patches:
         full_dataset = HyperspectralPatchDataset(
             args.data_dir,
@@ -134,7 +141,8 @@ def main(args):
             transform=None,
             is_training=True,
             max_samples_per_class=args.max_samples_per_class,
-            bin_factor=args.bin_factor
+            bin_factor=args.bin_factor,
+            spectral_augment=spectral_aug
         )
 
     # Split dataset
@@ -277,6 +285,9 @@ if __name__ == '__main__':
                         help='Spatial patch size')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='Dropout rate (default: 0.5 for better generalization)')
+    parser.add_argument('--spectral_augment', type=str, default=None,
+                        choices=[None, 'light', 'medium', 'heavy'],
+                        help='Spectral augmentation mode for 1D models (None, light, medium, heavy)')
 
     # Training parameters
     parser.add_argument('--epochs', type=int, default=100,
@@ -293,7 +304,7 @@ if __name__ == '__main__':
     # Other parameters
     parser.add_argument('--output_dir', type=str, default='outputs',
                         help='Output directory for models and logs')
-    parser.add_argument('--num_workers', type=int, default=4,
+    parser.add_argument('--num_workers', type=int, default=2,
                         help='Number of data loader workers')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')

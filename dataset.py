@@ -26,7 +26,7 @@ CLASS_NAMES = ['Background', '95PU', 'HIPS', 'HVDF-HFP', 'GPSS', 'PU', '75PU', '
 class HyperspectralDataset(Dataset):
     """Dataset for hyperspectral material classification"""
 
-    def __init__(self, data_dir, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True):
+    def __init__(self, data_dir, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, spectral_augment=None):
         self.data_dir = data_dir
         self.bands_dir = os.path.join(data_dir, 'bands')
         self.labels_dir = os.path.join(data_dir, 'labels')
@@ -36,6 +36,7 @@ class HyperspectralDataset(Dataset):
         self.max_samples_per_class = max_samples_per_class
         self.bin_factor = bin_factor
         self.normalize = normalize
+        self.spectral_augment = spectral_augment
 
         # Get band files
         self.band_files = sorted([f for f in os.listdir(self.bands_dir) if f.endswith('.png')])
@@ -146,22 +147,29 @@ class HyperspectralDataset(Dataset):
         # Extract spectral signature for this pixel
         spectral_signature = self.bands_data[:, y, x]  # Shape: (num_bands,)
 
-        # Apply spectral normalization for better generalization
-        if self.normalize:
-            mean = spectral_signature.mean()
-            std = spectral_signature.std()
-            if std > 1e-6:  # Avoid division by zero
-                spectral_signature = (spectral_signature - mean) / std
-
         if self.is_training:
             label = self.labels[y, x]
 
-            if self.transform:
-                # Apply augmentation if needed
-                spectral_signature = self.transform(spectral_signature)
+            # Apply spectral augmentation BEFORE normalization
+            if self.spectral_augment is not None:
+                spectral_signature = self.spectral_augment(spectral_signature)
+
+            # Apply spectral normalization for better generalization
+            if self.normalize:
+                mean = spectral_signature.mean()
+                std = spectral_signature.std()
+                if std > 1e-6:  # Avoid division by zero
+                    spectral_signature = (spectral_signature - mean) / std
 
             return torch.tensor(spectral_signature, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
         else:
+            # Apply normalization for inference too
+            if self.normalize:
+                mean = spectral_signature.mean()
+                std = spectral_signature.std()
+                if std > 1e-6:  # Avoid division by zero
+                    spectral_signature = (spectral_signature - mean) / std
+
             return torch.tensor(spectral_signature, dtype=torch.float32), (y, x)
 
 
