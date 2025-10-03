@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+dl-env/
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Training outputs
+outputs/
+predictions/
+*.pth
+*.pt
+
+# Data inspection outputs
+data_inspection_*.png
+
+# Logs
+*.log
+wandb/
+runs/
+
+# Large data files (add these to .gitattributes for Git LFS if needed)
+*.npy
+data/
+inference_data_set1/
+inference_data_set2/
+
+# Temporary files
+*.tmp
+tmp/
