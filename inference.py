@@ -142,6 +142,13 @@ def calculate_statistics(prediction_map, confidence_map):
 def visualize_normalization_check(data_dir, output_dir, dataset_name='data'):
     """Visualize bands before and after normalization for verification"""
     bands_dir = os.path.join(data_dir, 'bands')
+
+    # Check if bands directory exists
+    if not os.path.exists(bands_dir):
+        print(f'  ⚠ Warning: Bands directory not found at {bands_dir}')
+        print(f'  Skipping normalization visualization for {dataset_name}')
+        return
+
     band_files = sorted([f for f in os.listdir(bands_dir) if f.endswith('.png')])[:26]
 
     # Load bands
