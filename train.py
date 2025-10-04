@@ -290,9 +290,9 @@ if __name__ == '__main__':
     parser.add_argument('--spectral_augment', type=str, default=None,
                         choices=[None, 'light', 'medium', 'heavy'],
                         help='Spectral augmentation mode for 1D models (None, light, medium, heavy)')
-    parser.add_argument('--norm_method', type=str, default='snv+minmax',
-                        choices=['snv', 'snv+minmax', 'robust', 'msc', 'vector', 'area', 'max', 'minmax', 'robust+snv'],
-                        help='Normalization method for handling intensity differences (default: snv+minmax)')
+    parser.add_argument('--norm_method', type=str, default='percentile',
+                        choices=['percentile', 'standard'],
+                        help='Normalization method: percentile (2-98%% band-wise) or standard (default: percentile)')
 
     # Training parameters
     parser.add_argument('--epochs', type=int, default=100,

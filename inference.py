@@ -246,9 +246,9 @@ if __name__ == '__main__':
                         help='Output directory for predictions')
     parser.add_argument('--batch_size', type=int, default=256,
                         help='Batch size for inference')
-    parser.add_argument('--norm_method', type=str, default='snv+minmax',
-                        choices=['snv', 'snv+minmax', 'robust', 'msc', 'vector', 'area', 'max', 'minmax', 'robust+snv'],
-                        help='Normalization method (must match training, default: snv+minmax)')
+    parser.add_argument('--norm_method', type=str, default='percentile',
+                        choices=['percentile', 'standard'],
+                        help='Normalization method (must match training, default: percentile)')
 
     args = parser.parse_args()
 

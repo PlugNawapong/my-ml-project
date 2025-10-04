@@ -23,10 +23,20 @@ CLASS_MAPPING = {
 
 CLASS_NAMES = ['Background', '95PU', 'HIPS', 'HVDF-HFP', 'GPSS', 'PU', '75PU', '85PU', 'PETE', 'PET', 'PMMA']
 
+def normalize_percentile(spectrum, lower=2, upper=98):
+    """Band-wise percentile normalization (2-98%)"""
+    normalized = np.zeros_like(spectrum, dtype=np.float32)
+    for i in range(len(spectrum)):
+        val = spectrum[i]
+        # For single values, just normalize to [0, 1] range
+        # The actual percentile clipping happens at the image level in load_bands
+        normalized[i] = val
+    return normalized
+
 class HyperspectralDataset(Dataset):
     """Dataset for hyperspectral material classification"""
 
-    def __init__(self, data_dir, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, spectral_augment=None, norm_method='snv+minmax'):
+    def __init__(self, data_dir, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, spectral_augment=None, norm_method='percentile'):
         self.data_dir = data_dir
         self.bands_dir = os.path.join(data_dir, 'bands')
         self.labels_dir = os.path.join(data_dir, 'labels')
@@ -38,13 +48,6 @@ class HyperspectralDataset(Dataset):
         self.normalize = normalize
         self.spectral_augment = spectral_augment
         self.norm_method = norm_method
-
-        # Import robust normalization
-        if normalize:
-            from robust_normalization import get_normalization
-            self.normalizer = get_normalization(norm_method)
-        else:
-            self.normalizer = None
 
         # Get band files
         self.band_files = sorted([f for f in os.listdir(self.bands_dir) if f.endswith('.png')])
@@ -84,15 +87,27 @@ class HyperspectralDataset(Dataset):
         ).mean(axis=(1, 3))
 
     def _load_all_bands(self):
-        """Load all spectral bands into memory with optional binning"""
+        """Load all spectral bands into memory with optional binning and normalization"""
         bands = []
         for band_file in self.band_files:
             band_path = os.path.join(self.bands_dir, band_file)
-            band_img = np.array(Image.open(band_path), dtype=np.float32) / 255.0
+            band_img = np.array(Image.open(band_path), dtype=np.float32)
 
             # Apply pixel binning if bin_factor > 1
             if self.bin_factor > 1:
                 band_img = self._bin_image(band_img, self.bin_factor)
+
+            # Apply band-wise percentile normalization
+            if self.normalize and self.norm_method == 'percentile':
+                p_low = np.percentile(band_img, 2)
+                p_high = np.percentile(band_img, 98)
+                if p_high > p_low:
+                    band_img = np.clip(band_img, p_low, p_high)
+                    band_img = (band_img - p_low) / (p_high - p_low)  # Normalize to [0, 1]
+                else:
+                    band_img = band_img / 255.0
+            else:
+                band_img = band_img / 255.0  # Standard normalization
 
             bands.append(band_img)
         return np.stack(bands, axis=0)  # Shape: (num_bands, height, width)
@@ -158,27 +173,20 @@ class HyperspectralDataset(Dataset):
         if self.is_training:
             label = self.labels[y, x]
 
-            # Apply spectral augmentation BEFORE normalization
+            # Apply spectral augmentation (normalization already done in _load_all_bands)
             if self.spectral_augment is not None:
                 spectral_signature = self.spectral_augment(spectral_signature)
 
-            # Apply robust spectral normalization for better generalization
-            if self.normalize and self.normalizer is not None:
-                spectral_signature = self.normalizer(spectral_signature)
-
             return torch.tensor(spectral_signature, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
         else:
-            # Apply normalization for inference too
-            if self.normalize and self.normalizer is not None:
-                spectral_signature = self.normalizer(spectral_signature)
-
+            # Normalization already done in _load_all_bands
             return torch.tensor(spectral_signature, dtype=torch.float32), (y, x)
 
 
 class HyperspectralPatchDataset(Dataset):
     """Dataset that extracts spatial patches from hyperspectral images"""
 
-    def __init__(self, data_dir, patch_size=3, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, norm_method='snv+minmax'):
+    def __init__(self, data_dir, patch_size=3, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, norm_method='percentile'):
         self.data_dir = data_dir
         self.bands_dir = os.path.join(data_dir, 'bands')
         self.labels_dir = os.path.join(data_dir, 'labels')
@@ -191,13 +199,6 @@ class HyperspectralPatchDataset(Dataset):
         self.normalize = normalize
         self.norm_method = norm_method
         self.padding = patch_size // 2
-
-        # Import robust normalization
-        if normalize:
-            from robust_normalization import get_normalization
-            self.normalizer = get_normalization(norm_method)
-        else:
-            self.normalizer = None
 
         # Get band files
         self.band_files = sorted([f for f in os.listdir(self.bands_dir) if f.endswith('.png')])
@@ -244,15 +245,27 @@ class HyperspectralPatchDataset(Dataset):
         ).mean(axis=(1, 3))
 
     def _load_all_bands(self):
-        """Load all spectral bands into memory with optional binning"""
+        """Load all spectral bands into memory with optional binning and normalization"""
         bands = []
         for band_file in self.band_files:
             band_path = os.path.join(self.bands_dir, band_file)
-            band_img = np.array(Image.open(band_path), dtype=np.float32) / 255.0
+            band_img = np.array(Image.open(band_path), dtype=np.float32)
 
             # Apply pixel binning if bin_factor > 1
             if self.bin_factor > 1:
                 band_img = self._bin_image(band_img, self.bin_factor)
+
+            # Apply band-wise percentile normalization
+            if self.normalize and self.norm_method == 'percentile':
+                p_low = np.percentile(band_img, 2)
+                p_high = np.percentile(band_img, 98)
+                if p_high > p_low:
+                    band_img = np.clip(band_img, p_low, p_high)
+                    band_img = (band_img - p_low) / (p_high - p_low)  # Normalize to [0, 1]
+                else:
+                    band_img = band_img / 255.0
+            else:
+                band_img = band_img / 255.0  # Standard normalization
 
             bands.append(band_img)
         return np.stack(bands, axis=0)  # Shape: (num_bands, height, width)
@@ -319,11 +332,7 @@ class HyperspectralPatchDataset(Dataset):
             x:x + 2*self.padding + 1
         ]  # Shape: (num_bands, patch_size, patch_size)
 
-        # Apply robust spectral normalization for better generalization
-        if self.normalize and self.normalizer is not None:
-            for band_idx in range(patch.shape[0]):
-                band = patch[band_idx]
-                patch[band_idx] = self.normalizer(band)
+        # Normalization already done in _load_all_bands
 
         if self.is_training:
             label = self.labels[y, x]
