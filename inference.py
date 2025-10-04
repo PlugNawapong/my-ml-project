@@ -276,6 +276,29 @@ def main(args):
         np.save(os.path.join(output_dir, 'predictions.npy'), prediction_map)
         np.save(os.path.join(output_dir, 'confidence.npy'), confidence_map)
 
+        # Apply post-processing if requested
+        if args.post_process:
+            print('\nApplying post-processing to reduce noise...')
+            from post_process import apply_all_filters
+
+            prediction_map_filtered = apply_all_filters(
+                prediction_map,
+                confidence_map,
+                use_majority=True,
+                majority_size=args.majority_size,
+                use_morphological=True,
+                morph_size=args.morph_size,
+                use_confidence=False
+            )
+
+            # Save filtered predictions
+            np.save(os.path.join(output_dir, 'predictions_filtered.npy'), prediction_map_filtered)
+
+            # Create filtered visualization
+            vis_filtered_path = os.path.join(output_dir, 'prediction_filtered_visualization.png')
+            create_visualization(prediction_map_filtered, confidence_map, vis_filtered_path)
+            print(f'  ✓ Filtered predictions saved')
+
         # Create and save visualization
         vis_path = os.path.join(output_dir, 'prediction_visualization.png')
         create_visualization(prediction_map, confidence_map, vis_path)
@@ -324,6 +347,12 @@ if __name__ == '__main__':
     parser.add_argument('--norm_method', type=str, default='percentile',
                         choices=['percentile', 'standard'],
                         help='Normalization method (must match training, default: percentile)')
+    parser.add_argument('--post_process', action='store_true',
+                        help='Apply post-processing to reduce noise (majority + morphological filtering)')
+    parser.add_argument('--majority_size', type=int, default=3,
+                        help='Majority filter size for post-processing (default: 3)')
+    parser.add_argument('--morph_size', type=int, default=3,
+                        help='Morphological kernel size for post-processing (default: 3)')
 
     args = parser.parse_args()
 
