@@ -115,6 +115,97 @@ def create_visualization(prediction_map, confidence_map=None, save_path=None):
     return vis_img
 
 
+def create_enhanced_visualization(prediction_map, confidence_map=None, save_path=None,
+                                   show_edges=True, show_labels=True):
+    """Create enhanced visualization with edges and material labels"""
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    from post_process import detect_edges
+
+    height, width = prediction_map.shape
+
+    # Create base RGB visualization
+    vis_img = np.zeros((height, width, 3), dtype=np.uint8)
+    for class_idx, color in CLASS_COLORS.items():
+        mask = prediction_map == class_idx
+        vis_img[mask] = color
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(16, 12))
+    ax.imshow(vis_img)
+    ax.axis('off')
+
+    # Add edges if requested
+    if show_edges:
+        edges = detect_edges(prediction_map, method='sobel')
+        # Overlay edges in white
+        edge_overlay = np.zeros((height, width, 4))
+        edge_overlay[edges > 0] = [1, 1, 1, 0.5]  # White with 50% transparency
+        ax.imshow(edge_overlay)
+
+    # Add material labels if requested
+    if show_labels:
+        # Calculate statistics for each class
+        class_stats = {}
+        for class_idx in range(len(CLASS_NAMES)):
+            mask = prediction_map == class_idx
+            count = np.sum(mask)
+            if count > 0:
+                # Find centroid of this class
+                y_coords, x_coords = np.where(mask)
+                centroid_y = int(np.mean(y_coords))
+                centroid_x = int(np.mean(x_coords))
+                mean_conf = float(np.mean(confidence_map[mask])) if confidence_map is not None else 0.0
+
+                class_stats[class_idx] = {
+                    'name': CLASS_NAMES[class_idx],
+                    'count': count,
+                    'percentage': 100 * count / (height * width),
+                    'centroid': (centroid_x, centroid_y),
+                    'confidence': mean_conf
+                }
+
+        # Add labels at centroids (only for significant classes)
+        for class_idx, stats in class_stats.items():
+            if stats['percentage'] > 0.5 and class_idx != 0:  # Skip background and tiny regions
+                x, y = stats['centroid']
+                label_text = f"{stats['name']}\n{stats['percentage']:.1f}%"
+                if confidence_map is not None:
+                    label_text += f"\n{stats['confidence']:.2f}"
+
+                # Add text with background box
+                ax.text(x, y, label_text,
+                       color='white', fontsize=10, fontweight='bold',
+                       ha='center', va='center',
+                       bbox=dict(boxstyle='round,pad=0.5',
+                                facecolor='black', alpha=0.7, edgecolor='white'))
+
+    # Create legend
+    legend_patches = []
+    for class_idx in range(len(CLASS_NAMES)):
+        if np.sum(prediction_map == class_idx) > 0:  # Only show classes that exist
+            color = np.array(CLASS_COLORS[class_idx]) / 255.0
+            count = np.sum(prediction_map == class_idx)
+            percentage = 100 * count / (height * width)
+            label = f'{CLASS_NAMES[class_idx]}: {percentage:.1f}%'
+            legend_patches.append(mpatches.Patch(color=color, label=label))
+
+    ax.legend(handles=legend_patches, loc='upper right',
+             fontsize=10, framealpha=0.9, fancybox=True)
+
+    plt.title('Material Classification with Labels', fontsize=16, fontweight='bold', pad=20)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f'Enhanced visualization saved to: {save_path}')
+    else:
+        plt.show()
+
+    return vis_img
+
+
 def calculate_statistics(prediction_map, confidence_map):
     """Calculate prediction statistics"""
     stats = {
@@ -297,11 +388,22 @@ def main(args):
             # Create filtered visualization
             vis_filtered_path = os.path.join(output_dir, 'prediction_filtered_visualization.png')
             create_visualization(prediction_map_filtered, confidence_map, vis_filtered_path)
+
+            # Create enhanced visualization with edges and labels
+            vis_enhanced_path = os.path.join(output_dir, 'prediction_enhanced_labeled.png')
+            create_enhanced_visualization(prediction_map_filtered, confidence_map, vis_enhanced_path,
+                                         show_edges=args.show_edges, show_labels=args.show_labels)
             print(f'  ✓ Filtered predictions saved')
 
         # Create and save visualization
         vis_path = os.path.join(output_dir, 'prediction_visualization.png')
         create_visualization(prediction_map, confidence_map, vis_path)
+
+        # Create enhanced visualization (even without post-processing)
+        if args.show_edges or args.show_labels:
+            vis_enhanced_path = os.path.join(output_dir, 'prediction_enhanced_labeled.png')
+            create_enhanced_visualization(prediction_map, confidence_map, vis_enhanced_path,
+                                         show_edges=args.show_edges, show_labels=args.show_labels)
 
         # Calculate and save statistics
         stats = calculate_statistics(prediction_map, confidence_map)
@@ -353,6 +455,10 @@ if __name__ == '__main__':
                         help='Majority filter size for post-processing (default: 3)')
     parser.add_argument('--morph_size', type=int, default=3,
                         help='Morphological kernel size for post-processing (default: 3)')
+    parser.add_argument('--show_edges', action='store_true',
+                        help='Show material boundaries with edge detection')
+    parser.add_argument('--show_labels', action='store_true',
+                        help='Show material type labels on visualization')
 
     args = parser.parse_args()
 

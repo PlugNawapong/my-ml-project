@@ -1,6 +1,67 @@
 import numpy as np
-from scipy.ndimage import median_filter, binary_opening, binary_closing
+from scipy.ndimage import median_filter, binary_opening, binary_closing, sobel
 from scipy import ndimage
+import cv2
+
+def detect_edges(prediction_map, method='sobel'):
+    """Detect edges in prediction map"""
+    if method == 'sobel':
+        # Sobel edge detection
+        sx = sobel(prediction_map.astype(float), axis=0)
+        sy = sobel(prediction_map.astype(float), axis=1)
+        edges = np.hypot(sx, sy)
+        edges = (edges > 0).astype(np.uint8) * 255
+    elif method == 'canny':
+        # Canny edge detection
+        edges = cv2.Canny(prediction_map.astype(np.uint8), 0, 1)
+    else:
+        raise ValueError(f"Unknown edge detection method: {method}")
+
+    return edges
+
+def voting_classification(prediction_maps, confidence_maps=None, method='majority'):
+    """
+    Ensemble voting from multiple predictions
+
+    Args:
+        prediction_maps: List of prediction maps (N, H, W)
+        confidence_maps: Optional list of confidence maps (N, H, W)
+        method: 'majority' or 'weighted'
+    """
+    if len(prediction_maps) == 0:
+        raise ValueError("No prediction maps provided")
+
+    if len(prediction_maps) == 1:
+        return prediction_maps[0]
+
+    prediction_maps = np.array(prediction_maps)
+
+    if method == 'majority':
+        # Simple majority vote
+        from scipy.stats import mode
+        result = mode(prediction_maps, axis=0, keepdims=False)[0]
+        return result
+
+    elif method == 'weighted' and confidence_maps is not None:
+        # Weighted voting based on confidence
+        confidence_maps = np.array(confidence_maps)
+        height, width = prediction_maps.shape[1], prediction_maps.shape[2]
+        result = np.zeros((height, width), dtype=np.uint8)
+
+        for i in range(height):
+            for j in range(width):
+                votes = {}
+                for k in range(len(prediction_maps)):
+                    pred = prediction_maps[k, i, j]
+                    conf = confidence_maps[k, i, j]
+                    votes[pred] = votes.get(pred, 0) + conf
+
+                # Select class with highest weighted vote
+                result[i, j] = max(votes.items(), key=lambda x: x[1])[0]
+
+        return result
+    else:
+        raise ValueError(f"Unknown voting method: {method}")
 
 def majority_filter(prediction_map, size=3):
     """Apply majority (mode) filter to smooth predictions"""
