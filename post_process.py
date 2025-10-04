@@ -111,10 +111,63 @@ def confidence_threshold_filter(prediction_map, confidence_map, threshold=0.7, d
     filtered[confidence_map < threshold] = default_class
     return filtered
 
+def edge_aware_voting(prediction_map, window_size=5, edge_threshold=0.5):
+    """
+    Edge-aware spatial voting: Vote only within same material region (don't cross edges)
+
+    For each pixel, look at neighbors but only vote with pixels in the same region
+    (separated by edges). This prevents voting across material boundaries.
+
+    Args:
+        prediction_map: Prediction map (H, W)
+        window_size: Size of voting window (default: 5)
+        edge_threshold: Threshold for edge detection (0-1, default: 0.5)
+
+    Returns:
+        Voted prediction map
+    """
+    from scipy.stats import mode
+
+    # Detect edges in the prediction map
+    edge_map = detect_edges(prediction_map, method='sobel')
+    # Normalize edges to [0, 1]
+    edge_map = edge_map.astype(float) / 255.0
+
+    height, width = prediction_map.shape
+    voted = np.zeros_like(prediction_map)
+    pad = window_size // 2
+
+    # Pad prediction map and edge map
+    padded_pred = np.pad(prediction_map, pad, mode='edge')
+    padded_edge = np.pad(edge_map, pad, mode='edge')
+
+    for i in range(height):
+        for j in range(width):
+            # Extract window around current pixel
+            window_pred = padded_pred[i:i+window_size, j:j+window_size]
+            window_edge = padded_edge[i:i+window_size, j:j+window_size]
+
+            # Only vote with pixels that are NOT on edges (same region)
+            # Edges have high values, so we want low edge values
+            valid_mask = window_edge < edge_threshold
+
+            # Get valid predictions (not on edges)
+            valid_predictions = window_pred[valid_mask]
+
+            if len(valid_predictions) > 0:
+                # Vote among valid neighbors
+                voted[i, j] = mode(valid_predictions, keepdims=False)[0]
+            else:
+                # If all neighbors are on edges, keep original prediction
+                voted[i, j] = prediction_map[i, j]
+
+    return voted
+
 def apply_all_filters(prediction_map, confidence_map=None,
                       use_majority=True, majority_size=3,
                       use_morphological=True, morph_size=3,
-                      use_confidence=False, conf_threshold=0.7):
+                      use_confidence=False, conf_threshold=0.7,
+                      use_spatial_voting=False, voting_window_size=5, edge_threshold=0.5):
     """Apply combination of filters"""
     result = prediction_map.copy()
 
@@ -132,6 +185,11 @@ def apply_all_filters(prediction_map, confidence_map=None,
     if use_morphological:
         print(f'  Applying morphological operations (size={morph_size})...')
         result = morphological_clean(result, kernel_size=morph_size)
+
+    # Step 4: Edge-aware spatial voting
+    if use_spatial_voting:
+        print(f'  Applying edge-aware spatial voting (window={voting_window_size}, edge_threshold={edge_threshold})...')
+        result = edge_aware_voting(result, window_size=voting_window_size, edge_threshold=edge_threshold)
 
     return result
 
@@ -153,6 +211,12 @@ if __name__ == '__main__':
                         help='Confidence threshold (default: 0.7)')
     parser.add_argument('--use_confidence', action='store_true',
                         help='Apply confidence thresholding')
+    parser.add_argument('--spatial_voting', action='store_true',
+                        help='Apply edge-aware spatial voting')
+    parser.add_argument('--voting_window', type=int, default=5,
+                        help='Spatial voting window size (default: 5)')
+    parser.add_argument('--edge_threshold', type=float, default=0.5,
+                        help='Edge threshold for spatial voting (default: 0.5)')
 
     args = parser.parse_args()
 
@@ -184,7 +248,10 @@ if __name__ == '__main__':
         use_morphological=True,
         morph_size=args.morph_size,
         use_confidence=args.use_confidence,
-        conf_threshold=args.conf_threshold
+        conf_threshold=args.conf_threshold,
+        use_spatial_voting=args.spatial_voting,
+        voting_window_size=args.voting_window,
+        edge_threshold=args.edge_threshold
     )
 
     # Save filtered predictions

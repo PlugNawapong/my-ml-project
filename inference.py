@@ -379,7 +379,10 @@ def main(args):
                 majority_size=args.majority_size,
                 use_morphological=True,
                 morph_size=args.morph_size,
-                use_confidence=False
+                use_confidence=False,
+                use_spatial_voting=args.spatial_voting,
+                voting_window_size=args.voting_window,
+                edge_threshold=args.edge_threshold
             )
 
             # Save filtered predictions
@@ -455,6 +458,12 @@ if __name__ == '__main__':
                         help='Majority filter size for post-processing (default: 3)')
     parser.add_argument('--morph_size', type=int, default=3,
                         help='Morphological kernel size for post-processing (default: 3)')
+    parser.add_argument('--spatial_voting', action='store_true',
+                        help='Apply edge-aware spatial voting (votes only within same material region)')
+    parser.add_argument('--voting_window', type=int, default=5,
+                        help='Spatial voting window size (default: 5)')
+    parser.add_argument('--edge_threshold', type=float, default=0.5,
+                        help='Edge threshold for spatial voting (default: 0.5)')
     parser.add_argument('--show_edges', action='store_true',
                         help='Show material boundaries with edge detection')
     parser.add_argument('--show_labels', action='store_true',
