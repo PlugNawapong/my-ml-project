@@ -64,21 +64,18 @@ def voting_classification(prediction_maps, confidence_maps=None, method='majorit
         raise ValueError(f"Unknown voting method: {method}")
 
 def majority_filter(prediction_map, size=3):
-    """Apply majority (mode) filter to smooth predictions"""
+    """Apply majority (mode) filter to smooth predictions using fast scipy implementation"""
+    from scipy.ndimage import generic_filter
     from scipy.stats import mode
 
-    height, width = prediction_map.shape
-    filtered = np.zeros_like(prediction_map)
-    pad = size // 2
+    def mode_func(values):
+        """Get most common value in window"""
+        return mode(values, keepdims=False)[0]
 
-    padded = np.pad(prediction_map, pad, mode='edge')
+    # Use scipy's generic_filter which is much faster than Python loops
+    filtered = generic_filter(prediction_map, mode_func, size=size, mode='nearest')
 
-    for i in range(height):
-        for j in range(width):
-            window = padded[i:i+size, j:j+size]
-            filtered[i, j] = mode(window, axis=None, keepdims=False)[0]
-
-    return filtered
+    return filtered.astype(prediction_map.dtype)
 
 def median_filter_predictions(prediction_map, size=3):
     """Apply median filter to remove salt-and-pepper noise"""
