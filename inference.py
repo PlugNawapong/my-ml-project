@@ -8,6 +8,9 @@ import json
 
 from dataset import HyperspectralPatchDataset, CLASS_NAMES
 from model import get_model
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend
+import matplotlib.pyplot as plt
 
 
 # Color mapping for visualization (same as labels.json)
@@ -136,6 +139,62 @@ def calculate_statistics(prediction_map, confidence_map):
     return stats
 
 
+def visualize_normalization_check(data_dir, output_dir, dataset_name='data'):
+    """Visualize bands before and after normalization for verification"""
+    bands_dir = os.path.join(data_dir, 'bands')
+    band_files = sorted([f for f in os.listdir(bands_dir) if f.endswith('.png')])[:26]
+
+    # Load bands
+    bands_raw = []
+    bands_norm = []
+
+    for band_file in band_files:
+        band_path = os.path.join(bands_dir, band_file)
+        band_img = np.array(Image.open(band_path).convert('L'), dtype=np.float32)
+        bands_raw.append(band_img)
+
+        # Apply percentile normalization
+        p_low = np.percentile(band_img, 2)
+        p_high = np.percentile(band_img, 98)
+        if p_high > p_low:
+            band_norm = np.clip(band_img, p_low, p_high)
+            band_norm = (band_norm - p_low) / (p_high - p_low) * 255.0
+        else:
+            band_norm = band_img
+        bands_norm.append(band_norm)
+
+    # Create visualization
+    fig, axes = plt.subplots(2, 26, figsize=(26, 4))
+    wavelengths = np.arange(450, 710, 10)
+
+    for i in range(26):
+        # Raw
+        axes[0, i].imshow(bands_raw[i], cmap='gray', vmin=0, vmax=255)
+        axes[0, i].axis('off')
+        axes[0, i].set_title(f'{wavelengths[i]}nm', fontsize=6)
+
+        # Normalized
+        axes[1, i].imshow(bands_norm[i], cmap='gray', vmin=0, vmax=255)
+        axes[1, i].axis('off')
+
+    axes[0, 0].set_ylabel('Raw', fontsize=8, fontweight='bold')
+    axes[1, 0].set_ylabel('Normalized', fontsize=8, fontweight='bold')
+
+    plt.suptitle(f'{dataset_name}: Percentile Normalization Check', fontsize=12, fontweight='bold')
+    plt.tight_layout()
+
+    viz_path = os.path.join(output_dir, f'normalization_check_{dataset_name}.png')
+    plt.savefig(viz_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f'  ✓ Saved normalization check: {viz_path}')
+
+    # Print statistics
+    raw_mean = np.mean([b.mean() for b in bands_raw])
+    norm_mean = np.mean([b.mean() for b in bands_norm])
+    print(f'  Raw mean intensity: {raw_mean:.1f}, Normalized mean: {norm_mean:.1f}')
+
+
 def main(args):
     # Device - prioritize MPS for Apple Silicon
     if torch.backends.mps.is_available():
@@ -180,6 +239,15 @@ def main(args):
     for data_dir in data_dirs:
         dataset_name = os.path.basename(data_dir)
         print(f'\nProcessing: {dataset_name}')
+
+        # Visualize normalization before inference
+        if args.norm_method == 'percentile':
+            print('\n' + '='*80)
+            print('NORMALIZATION CHECK')
+            print('='*80)
+            print(f'\nVisualizing normalization for {dataset_name}...')
+            visualize_normalization_check(data_dir, args.output_dir, dataset_name)
+            print('='*80 + '\n')
 
         # Predict
         prediction_map, confidence_map = predict_image(
