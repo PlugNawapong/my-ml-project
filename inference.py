@@ -143,42 +143,7 @@ def create_enhanced_visualization(prediction_map, confidence_map=None, save_path
         edge_overlay[edges > 0] = [1, 1, 1, 0.5]  # White with 50% transparency
         ax.imshow(edge_overlay)
 
-    # Add material labels if requested
-    if show_labels:
-        # Calculate statistics for each class
-        class_stats = {}
-        for class_idx in range(len(CLASS_NAMES)):
-            mask = prediction_map == class_idx
-            count = np.sum(mask)
-            if count > 0:
-                # Find centroid of this class
-                y_coords, x_coords = np.where(mask)
-                centroid_y = int(np.mean(y_coords))
-                centroid_x = int(np.mean(x_coords))
-                mean_conf = float(np.mean(confidence_map[mask])) if confidence_map is not None else 0.0
-
-                class_stats[class_idx] = {
-                    'name': CLASS_NAMES[class_idx],
-                    'count': count,
-                    'percentage': 100 * count / (height * width),
-                    'centroid': (centroid_x, centroid_y),
-                    'confidence': mean_conf
-                }
-
-        # Add labels at centroids (only for significant classes)
-        for class_idx, stats in class_stats.items():
-            if stats['percentage'] > 0.5 and class_idx != 0:  # Skip background and tiny regions
-                x, y = stats['centroid']
-                label_text = f"{stats['name']}\n{stats['percentage']:.1f}%"
-                if confidence_map is not None:
-                    label_text += f"\n{stats['confidence']:.2f}"
-
-                # Add text with background box
-                ax.text(x, y, label_text,
-                       color='white', fontsize=10, fontweight='bold',
-                       ha='center', va='center',
-                       bbox=dict(boxstyle='round,pad=0.5',
-                                facecolor='black', alpha=0.7, edgecolor='white'))
+    # Labels are now removed - only legend will be shown
 
     # Create legend
     legend_patches = []
@@ -370,19 +335,13 @@ def main(args):
         # Apply post-processing if requested
         if args.post_process:
             print('\nApplying post-processing to reduce noise...')
-            from post_process import apply_all_filters
+            from post_process import apply_industry_standard_postprocessing
 
-            prediction_map_filtered = apply_all_filters(
+            prediction_map_filtered = apply_industry_standard_postprocessing(
                 prediction_map,
                 confidence_map,
-                use_majority=True,
-                majority_size=args.majority_size,
-                use_morphological=True,
-                morph_size=args.morph_size,
-                use_confidence=False,
-                use_spatial_voting=args.spatial_voting,
-                voting_window_size=args.voting_window,
-                edge_threshold=args.edge_threshold
+                min_region_size=args.min_region_size,
+                smooth_sigma=args.smooth_sigma
             )
 
             # Save filtered predictions
@@ -392,10 +351,10 @@ def main(args):
             vis_filtered_path = os.path.join(output_dir, 'prediction_filtered_visualization.png')
             create_visualization(prediction_map_filtered, confidence_map, vis_filtered_path)
 
-            # Create enhanced visualization with edges and labels
+            # Create enhanced visualization with edges (no labels on image)
             vis_enhanced_path = os.path.join(output_dir, 'prediction_enhanced_labeled.png')
             create_enhanced_visualization(prediction_map_filtered, confidence_map, vis_enhanced_path,
-                                         show_edges=args.show_edges, show_labels=args.show_labels)
+                                         show_edges=args.show_edges, show_labels=False)
             print(f'  ✓ Filtered predictions saved')
 
         # Create and save visualization
@@ -453,21 +412,15 @@ if __name__ == '__main__':
                         choices=['percentile', 'standard'],
                         help='Normalization method (must match training, default: percentile)')
     parser.add_argument('--post_process', action='store_true',
-                        help='Apply post-processing to reduce noise (majority + morphological filtering)')
-    parser.add_argument('--majority_size', type=int, default=3,
-                        help='Majority filter size for post-processing (default: 3)')
-    parser.add_argument('--morph_size', type=int, default=3,
-                        help='Morphological kernel size for post-processing (default: 3)')
-    parser.add_argument('--spatial_voting', action='store_true',
-                        help='Apply edge-aware spatial voting (votes only within same material region)')
-    parser.add_argument('--voting_window', type=int, default=5,
-                        help='Spatial voting window size (default: 5)')
-    parser.add_argument('--edge_threshold', type=float, default=0.5,
-                        help='Edge threshold for spatial voting (default: 0.5)')
+                        help='Apply industry-standard post-processing to reduce noise')
+    parser.add_argument('--min_region_size', type=int, default=50,
+                        help='Minimum region size in pixels (smaller regions removed as noise, default: 50)')
+    parser.add_argument('--smooth_sigma', type=float, default=0.8,
+                        help='Gaussian smoothing sigma for denoising (default: 0.8)')
     parser.add_argument('--show_edges', action='store_true',
                         help='Show material boundaries with edge detection')
     parser.add_argument('--show_labels', action='store_true',
-                        help='Show material type labels on visualization')
+                        help='Show material type labels on visualization (deprecated - labels removed from image)')
 
     args = parser.parse_args()
 

@@ -106,6 +106,10 @@ class HyperspectralDataset(Dataset):
                     band_img = (band_img - p_low) / (p_high - p_low)  # Normalize to [0, 1]
                 else:
                     band_img = band_img / 255.0
+
+                # Apply Gaussian denoising after normalization (industry standard)
+                from scipy.ndimage import gaussian_filter
+                band_img = gaussian_filter(band_img, sigma=0.5)
             else:
                 band_img = band_img / 255.0  # Standard normalization
 
@@ -264,6 +268,10 @@ class HyperspectralPatchDataset(Dataset):
                     band_img = (band_img - p_low) / (p_high - p_low)  # Normalize to [0, 1]
                 else:
                     band_img = band_img / 255.0
+
+                # Apply Gaussian denoising after normalization (industry standard)
+                from scipy.ndimage import gaussian_filter
+                band_img = gaussian_filter(band_img, sigma=0.5)
             else:
                 band_img = band_img / 255.0  # Standard normalization
 

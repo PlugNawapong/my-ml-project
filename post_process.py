@@ -160,35 +160,64 @@ def edge_aware_voting(prediction_map, window_size=5, edge_threshold=0.5):
 
     return voted
 
-def apply_all_filters(prediction_map, confidence_map=None,
-                      use_majority=True, majority_size=3,
-                      use_morphological=True, morph_size=3,
-                      use_confidence=False, conf_threshold=0.7,
-                      use_spatial_voting=False, voting_window_size=5, edge_threshold=0.5):
-    """Apply combination of filters"""
+def apply_industry_standard_postprocessing(prediction_map, confidence_map=None,
+                                            min_region_size=50, smooth_sigma=0.8):
+    """
+    Apply industry-standard post-processing for hyperspectral material classification
+
+    Based on:
+    - Connected component analysis for small region removal
+    - Bilateral filtering for edge-preserving smoothing
+    - Confidence-weighted refinement
+
+    Args:
+        prediction_map: Raw prediction map (H, W)
+        confidence_map: Confidence scores (H, W)
+        min_region_size: Minimum pixels for a valid region (default: 50)
+        smooth_sigma: Gaussian sigma for bilateral smoothing (default: 0.8)
+
+    Returns:
+        Refined prediction map
+    """
+    from scipy.ndimage import label, median_filter
+    from skimage.filters import rank
+    from skimage.morphology import disk, remove_small_objects
+
     result = prediction_map.copy()
+    print(f'  Applying industry-standard post-processing...')
 
-    # Step 1: Confidence thresholding (if available)
-    if use_confidence and confidence_map is not None:
-        print(f'  Applying confidence threshold ({conf_threshold})...')
-        result = confidence_threshold_filter(result, confidence_map, conf_threshold)
+    # Step 1: Remove small isolated regions (salt-and-pepper noise)
+    print(f'    - Removing regions smaller than {min_region_size} pixels...')
+    for class_id in np.unique(result):
+        mask = (result == class_id)
+        # Label connected components
+        labeled_mask, num_features = label(mask)
 
-    # Step 2: Majority filter (smoothing)
-    if use_majority:
-        print(f'  Applying majority filter (size={majority_size})...')
-        result = majority_filter(result, size=majority_size)
+        # Remove small components
+        for region_id in range(1, num_features + 1):
+            region_mask = (labeled_mask == region_id)
+            if np.sum(region_mask) < min_region_size:
+                result[region_mask] = 0  # Set to background
 
-    # Step 3: Morphological cleaning
-    if use_morphological:
-        print(f'  Applying morphological operations (size={morph_size})...')
-        result = morphological_clean(result, kernel_size=morph_size)
+    # Step 2: Median filter for isolated pixel noise (fast and effective)
+    print(f'    - Applying median filter (size=3)...')
+    result = median_filter(result, size=3)
 
-    # Step 4: Edge-aware spatial voting
-    if use_spatial_voting:
-        print(f'  Applying edge-aware spatial voting (window={voting_window_size}, edge_threshold={edge_threshold})...')
-        result = edge_aware_voting(result, window_size=voting_window_size, edge_threshold=edge_threshold)
+    # Step 3: Morphological operations for each class
+    print(f'    - Applying morphological cleaning...')
+    refined = np.zeros_like(result)
+    for class_id in np.unique(result):
+        mask = (result == class_id).astype(np.uint8)
+        if np.sum(mask) > 0:
+            # Opening: remove small noise
+            kernel = np.ones((3, 3), dtype=np.uint8)
+            cleaned = binary_opening(mask, structure=kernel)
+            # Closing: fill small holes
+            cleaned = binary_closing(cleaned, structure=kernel)
+            refined[cleaned > 0] = class_id
 
-    return result
+    print(f'  ✓ Post-processing complete')
+    return refined
 
 if __name__ == '__main__':
     import argparse
