@@ -26,7 +26,7 @@ CLASS_NAMES = ['Background', '95PU', 'HIPS', 'HVDF-HFP', 'GPSS', 'PU', '75PU', '
 class HyperspectralDataset(Dataset):
     """Dataset for hyperspectral material classification"""
 
-    def __init__(self, data_dir, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, spectral_augment=None):
+    def __init__(self, data_dir, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, spectral_augment=None, norm_method='snv+minmax'):
         self.data_dir = data_dir
         self.bands_dir = os.path.join(data_dir, 'bands')
         self.labels_dir = os.path.join(data_dir, 'labels')
@@ -37,6 +37,14 @@ class HyperspectralDataset(Dataset):
         self.bin_factor = bin_factor
         self.normalize = normalize
         self.spectral_augment = spectral_augment
+        self.norm_method = norm_method
+
+        # Import robust normalization
+        if normalize:
+            from robust_normalization import get_normalization
+            self.normalizer = get_normalization(norm_method)
+        else:
+            self.normalizer = None
 
         # Get band files
         self.band_files = sorted([f for f in os.listdir(self.bands_dir) if f.endswith('.png')])
@@ -154,21 +162,15 @@ class HyperspectralDataset(Dataset):
             if self.spectral_augment is not None:
                 spectral_signature = self.spectral_augment(spectral_signature)
 
-            # Apply spectral normalization for better generalization
-            if self.normalize:
-                mean = spectral_signature.mean()
-                std = spectral_signature.std()
-                if std > 1e-6:  # Avoid division by zero
-                    spectral_signature = (spectral_signature - mean) / std
+            # Apply robust spectral normalization for better generalization
+            if self.normalize and self.normalizer is not None:
+                spectral_signature = self.normalizer(spectral_signature)
 
             return torch.tensor(spectral_signature, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
         else:
             # Apply normalization for inference too
-            if self.normalize:
-                mean = spectral_signature.mean()
-                std = spectral_signature.std()
-                if std > 1e-6:  # Avoid division by zero
-                    spectral_signature = (spectral_signature - mean) / std
+            if self.normalize and self.normalizer is not None:
+                spectral_signature = self.normalizer(spectral_signature)
 
             return torch.tensor(spectral_signature, dtype=torch.float32), (y, x)
 
@@ -176,7 +178,7 @@ class HyperspectralDataset(Dataset):
 class HyperspectralPatchDataset(Dataset):
     """Dataset that extracts spatial patches from hyperspectral images"""
 
-    def __init__(self, data_dir, patch_size=3, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True):
+    def __init__(self, data_dir, patch_size=3, num_bands=26, transform=None, is_training=True, max_samples_per_class=None, bin_factor=1, normalize=True, norm_method='snv+minmax'):
         self.data_dir = data_dir
         self.bands_dir = os.path.join(data_dir, 'bands')
         self.labels_dir = os.path.join(data_dir, 'labels')
@@ -187,7 +189,15 @@ class HyperspectralPatchDataset(Dataset):
         self.max_samples_per_class = max_samples_per_class
         self.bin_factor = bin_factor
         self.normalize = normalize
+        self.norm_method = norm_method
         self.padding = patch_size // 2
+
+        # Import robust normalization
+        if normalize:
+            from robust_normalization import get_normalization
+            self.normalizer = get_normalization(norm_method)
+        else:
+            self.normalizer = None
 
         # Get band files
         self.band_files = sorted([f for f in os.listdir(self.bands_dir) if f.endswith('.png')])
@@ -309,14 +319,11 @@ class HyperspectralPatchDataset(Dataset):
             x:x + 2*self.padding + 1
         ]  # Shape: (num_bands, patch_size, patch_size)
 
-        # Apply spectral normalization for better generalization
-        if self.normalize:
+        # Apply robust spectral normalization for better generalization
+        if self.normalize and self.normalizer is not None:
             for band_idx in range(patch.shape[0]):
                 band = patch[band_idx]
-                mean = band.mean()
-                std = band.std()
-                if std > 1e-6:  # Avoid division by zero
-                    patch[band_idx] = (band - mean) / std
+                patch[band_idx] = self.normalizer(band)
 
         if self.is_training:
             label = self.labels[y, x]

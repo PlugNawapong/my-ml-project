@@ -44,7 +44,7 @@ def load_model(checkpoint_path, model_name, num_bands, num_classes, patch_size, 
     return model
 
 
-def predict_image(model, data_dir, device, use_patches=True, patch_size=3, num_bands=26, batch_size=256):
+def predict_image(model, data_dir, device, use_patches=True, patch_size=3, num_bands=26, batch_size=256, norm_method='snv+minmax'):
     """Predict material classes for an entire image"""
 
     # Load dataset for inference
@@ -54,7 +54,8 @@ def predict_image(model, data_dir, device, use_patches=True, patch_size=3, num_b
             patch_size=patch_size,
             num_bands=num_bands,
             transform=None,
-            is_training=False
+            is_training=False,
+            norm_method=norm_method
         )
     else:
         from dataset import HyperspectralDataset
@@ -62,7 +63,8 @@ def predict_image(model, data_dir, device, use_patches=True, patch_size=3, num_b
             data_dir,
             num_bands=num_bands,
             transform=None,
-            is_training=False
+            is_training=False,
+            norm_method=norm_method
         )
 
     # Create prediction map
@@ -187,7 +189,8 @@ def main(args):
             use_patches=args.use_patches,
             patch_size=args.patch_size,
             num_bands=args.num_bands,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            norm_method=args.norm_method
         )
 
         # Create output directory
@@ -243,6 +246,9 @@ if __name__ == '__main__':
                         help='Output directory for predictions')
     parser.add_argument('--batch_size', type=int, default=256,
                         help='Batch size for inference')
+    parser.add_argument('--norm_method', type=str, default='snv+minmax',
+                        choices=['snv', 'snv+minmax', 'robust', 'msc', 'vector', 'area', 'max', 'minmax', 'robust+snv'],
+                        help='Normalization method (must match training, default: snv+minmax)')
 
     args = parser.parse_args()
 

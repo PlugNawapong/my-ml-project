@@ -132,7 +132,8 @@ def main(args):
             transform=get_train_transforms() if args.augment else None,
             is_training=True,
             max_samples_per_class=args.max_samples_per_class,
-            bin_factor=args.bin_factor
+            bin_factor=args.bin_factor,
+            norm_method=args.norm_method
         )
     else:
         full_dataset = HyperspectralDataset(
@@ -142,7 +143,8 @@ def main(args):
             is_training=True,
             max_samples_per_class=args.max_samples_per_class,
             bin_factor=args.bin_factor,
-            spectral_augment=spectral_aug
+            spectral_augment=spectral_aug,
+            norm_method=args.norm_method
         )
 
     # Split dataset
@@ -288,6 +290,9 @@ if __name__ == '__main__':
     parser.add_argument('--spectral_augment', type=str, default=None,
                         choices=[None, 'light', 'medium', 'heavy'],
                         help='Spectral augmentation mode for 1D models (None, light, medium, heavy)')
+    parser.add_argument('--norm_method', type=str, default='snv+minmax',
+                        choices=['snv', 'snv+minmax', 'robust', 'msc', 'vector', 'area', 'max', 'minmax', 'robust+snv'],
+                        help='Normalization method for handling intensity differences (default: snv+minmax)')
 
     # Training parameters
     parser.add_argument('--epochs', type=int, default=100,
